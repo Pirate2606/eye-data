@@ -1,0 +1,39 @@
+Initial Eye Rotation: (359.93, 179.95, 0.12)
+Initial Eye Position: (-0.03, 1.70, -0.04)
+Initial Pupil Rotation: (359.93, 179.95, 0.12)
+Initial Pupil Position: (-0.03, 1.70, -0.05)
+
+
+
+Eye Rotation: (9.90, 194.96, 0.10)
+Eye Position: (-0.03, 1.70, -0.04)
+Pupil Rotation: (9.90, 194.96, 0.10)
+Pupil Position: (-0.04, 1.70, -0.05)
+
+
+
+Eye Rotation: (354.93, 179.94, 0.12)
+Eye Position: (-0.03, 1.70, -0.04)
+Pupil Rotation: (354.93, 179.94, 0.12)
+Pupil Position: (-0.03, 1.70, -0.05)
+
+
+
+Eye Rotation: (359.93, 179.95, 0.12)
+Eye Position: (-0.03, 1.70, -0.04)
+Pupil Rotation: (359.93, 179.95, 0.12)
+Pupil Position: (-0.03, 1.70, -0.05)
+
+
+
+Eye Rotation: (354.98, 159.93, 0.14)
+Eye Position: (-0.03, 1.70, -0.04)
+Pupil Rotation: (354.98, 159.93, 0.14)
+Pupil Position: (-0.03, 1.70, -0.05)
+
+
+
+Eye Rotation: (9.96, 164.97, 0.14)
+Eye Position: (-0.03, 1.70, -0.04)
+Pupil Rotation: (9.96, 164.97, 0.14)
+Pupil Position: (-0.03, 1.70, -0.05)
