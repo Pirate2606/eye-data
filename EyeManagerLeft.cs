@@ -26,10 +26,11 @@ public class EyeManagerLeft : MonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.Return))
         {
-            Debug.Log($"Initial Eye Rotation: {eye.transform.localRotation.eulerAngles.ToString("F6")}, {eye.transform.rotation.eulerAngles.ToString("F6")}");
-            Debug.Log($"Initial Eye Position: {eye.transform.localPosition.ToString("F6")}, {eye.transform.position.ToString("F6")}");
-            Debug.Log($"Initial Pupil Rotation: {pupil.transform.localRotation.eulerAngles.ToString("F6")}, {pupil.transform.rotation.eulerAngles.ToString("F6")}");
-            Debug.Log($"Initial Pupil Position: {pupil.transform.localPosition.ToString("F6")}, {pupil.transform.position.ToString("F6")}");
+            Debug.Log($"Initial Eye Rotation: {eye.transform.rotation.eulerAngles.ToString("F6")}");
+            Debug.Log($"Initial Eye Position: {eye.transform.position.ToString("F6")}");
+            Debug.Log($"Initial Pupil Rotation: {pupil.transform.rotation.eulerAngles.ToString("F6")}");
+            Debug.Log($"Initial Pupil Position: {pupil.transform.position.ToString("F6")}");
+            Debug.Log($"Initial Pupil Rotation Matrix:\n {pupil.transform.localToWorldMatrix.ToString("F6")}");
             Camera.main.transform.position = new Vector3(leftCameraPosition[0], leftCameraPosition[1], leftCameraPosition[2]);
             Camera.main.transform.rotation = Quaternion.Euler(new Vector3(leftCameraRotation[0], leftCameraRotation[1], leftCameraRotation[2]));
         }
@@ -39,10 +40,11 @@ public class EyeManagerLeft : MonoBehaviour
             canvas.SetActive(false);
             eye.transform.localRotation = Quaternion.Euler(rotationArray[count]);
             count++;
-            Debug.Log($"Eye Rotation: {eye.transform.localRotation.eulerAngles.ToString("F6")}, {eye.transform.rotation.eulerAngles.ToString("F6")}");
-            Debug.Log($"Eye Position: {eye.transform.localPosition.ToString("F6")}, {eye.transform.position.ToString("F6")}");
-            Debug.Log($"Pupil Rotation: {pupil.transform.localRotation.eulerAngles.ToString("F6")}, {pupil.transform.rotation.eulerAngles.ToString("F6")}");
-            Debug.Log($"Pupil Position: {pupil.transform.localPosition.ToString("F6")}, {pupil.transform.position.ToString("F6")}");
+            Debug.Log($"Eye Rotation: {eye.transform.rotation.eulerAngles.ToString("F6")}");
+            Debug.Log($"Eye Position: {eye.transform.position.ToString("F6")}");
+            Debug.Log($"Pupil Rotation: {pupil.transform.rotation.eulerAngles.ToString("F6")}");
+            Debug.Log($"Pupil Position: {pupil.transform.position.ToString("F6")}");
+            Debug.Log($"Pupil Rotation Matrix:\n {pupil.transform.localToWorldMatrix.ToString("F6")}");
         }
 
         if (Input.GetKeyDown(KeyCode.Space))
