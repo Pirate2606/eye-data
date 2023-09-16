@@ -1,37 +1,63 @@
-// Get the byte array of the YUV image.
-byte[] yuvBytes = ...;
+using UnityEngine;
 
-// Get the width and height of the image.
-int width = ...;
-int height = ...;
+public class YUV420NV21Display : MonoBehaviour
+{
+    public int width = 640; // Width of the image
+    public int height = 480; // Height of the image
+    public byte[] yuvData; // Your YUV420 NV21 byte array
 
-// Initialize the RGB image.
-byte[] rgbBytes = new byte[width * height * 3];
+    private Texture2D texture;
 
-// Convert the YUV image to RGB.
-for (int i = 0; i < height; i++) {
-  for (int j = 0; j < width; j++) {
-    // Get the Y, U, and V values from the YUV image.
-    int y = yuvBytes[i * width + j];
-    int u = yuvBytes[width * height + (i >> 1) * width + (j & ~1) + 0];
-    int v = yuvBytes[width * height + (i >> 1) * width + (j & ~1) + 1];
+    void Start()
+    {
+        // Convert YUV420 NV21 to RGB
+        byte[] rgbData = ConvertYUV420ToRGB(yuvData, width, height);
 
-    // Convert the Y, U, and V values to RGB values.
-    int r = y + 1.4075 * (v - 128);
-    int g = y - 0.3456 * (u - 128) - 0.7169 * (v - 128);
-    int b = y + 1.7790 * (u - 128);
+        // Create a texture
+        texture = new Texture2D(width, height);
+        texture.LoadRawTextureData(rgbData);
+        texture.Apply();
 
-    // Store the RGB values in the RGB image.
-    rgbBytes[i * width * 3 + j * 3 + 0] = r;
-    rgbBytes[i * width * 3 + j * 3 + 1] = g;
-    rgbBytes[i * width * 3 + j * 3 + 2] = b;
-  }
+        // Attach the texture to a GameObject's material
+        GetComponent<Renderer>().material.mainTexture = texture;
+    }
+
+    byte[] ConvertYUV420ToRGB(byte[] yuvData, int width, int height)
+    {
+        byte[] ConvertYUV420ToRGB(byte[] yuvData, int width, int height)
+{
+    int size = width * height;
+    byte[] rgbData = new byte[size * 3];
+
+    for (int i = 0; i < height; i++)
+    {
+        for (int j = 0; j < width; j++)
+        {
+            int Y = yuvData[i * width + j] & 0xFF;
+            int V = yuvData[(size + (i / 2) * width) + (j / 2) * 2] & 0xFF;
+            int U = yuvData[(size + (i / 2) * width) + (j / 2) * 2 + 1] & 0xFF;
+
+            int C = Y - 16;
+            int D = U - 128;
+            int E = V - 128;
+
+            int R = (298 * C + 409 * E + 128) >> 8;
+            int G = (298 * C - 100 * D - 208 * E + 128) >> 8;
+            int B = (298 * C + 516 * D + 128) >> 8;
+
+            // Clamp values to the 0-255 range
+            R = Mathf.Clamp(R, 0, 255);
+            G = Mathf.Clamp(G, 0, 255);
+            B = Mathf.Clamp(B, 0, 255);
+
+            rgbData[(i * width + j) * 3] = (byte)R;
+            rgbData[(i * width + j) * 3 + 1] = (byte)G;
+            rgbData[(i * width + j) * 3 + 2] = (byte)B;
+        }
+    }
+
+    return rgbData;
 }
 
-// Create a Texture2D from the RGB image.
-Texture2D texture = new Texture2D(width, height, TextureFormat.RGB24, false);
-texture.SetPixels(rgbBytes);
-texture.Apply();
-
-// Display the texture.
-// ...
+    }
+}
