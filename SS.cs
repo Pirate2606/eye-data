@@ -26,34 +26,37 @@ public class WorldCoordinateScreenshot : MonoBehaviour
         }
 
         // 1. Calculate the bounding box
-        Vector3 minBounds = new Vector3(
-            Mathf.Min(worldCorners[0].x, worldCorners[1].x, worldCorners[2].x, worldCorners[3].x),
-            Mathf.Min(worldCorners[0].y, worldCorners[1].y, worldCorners[2].y, worldCorners[3].y),
-            Mathf.Min(worldCorners[0].z, worldCorners[1].z, worldCorners[2].z, worldCorners[3].z)
-        );
+        // Vector3 minBounds = new Vector3(
+        //     Mathf.Min(worldCorners[0].x, worldCorners[1].x, worldCorners[2].x, worldCorners[3].x),
+        //     Mathf.Min(worldCorners[0].y, worldCorners[1].y, worldCorners[2].y, worldCorners[3].y),
+        //     Mathf.Min(worldCorners[0].z, worldCorners[1].z, worldCorners[2].z, worldCorners[3].z)
+        // );
 
-        Vector3 maxBounds = new Vector3(
-            Mathf.Max(worldCorners[0].x, worldCorners[1].x, worldCorners[2].x, worldCorners[3].x),
-            Mathf.Max(worldCorners[0].y, worldCorners[1].y, worldCorners[2].y, worldCorners[3].y),
-            Mathf.Max(worldCorners[0].z, worldCorners[1].z, worldCorners[2].z, worldCorners[3].z)
-        );
+        // Vector3 maxBounds = new Vector3(
+        //     Mathf.Max(worldCorners[0].x, worldCorners[1].x, worldCorners[2].x, worldCorners[3].x),
+        //     Mathf.Max(worldCorners[0].y, worldCorners[1].y, worldCorners[2].y, worldCorners[3].y),
+        //     Mathf.Max(worldCorners[0].z, worldCorners[1].z, worldCorners[2].z, worldCorners[3].z)
+        // );
 
-        Vector3 center = (minBounds + maxBounds) / 2;  // Center of the area
-        Vector3 size = maxBounds - minBounds;          // Size of the area
+        // Vector3 center = (minBounds + maxBounds) / 2;  // Center of the area
+        // Vector3 size = maxBounds - minBounds;          // Size of the area
+        GameObject temp = GameObject.Find("cell 4(Clone)");
+        Debug.Log(temp.transform.position);
+        Vector3 center = temp.transform.position;
 
         // 2. Position the capture camera
-        //captureCamera.transform.position = center + new Vector3(0, 0, -10); // Adjust for 2D or set Z manually
+        // captureCamera.transform.position = center + new Vector3(0, 0, 0); // Adjust for 2D or set Z manually
         captureCamera.transform.LookAt(center); // Ensure it looks at the area
 
         // Adjust camera settings
-        if (captureCamera.orthographic)
-        {
-            captureCamera.orthographicSize = Mathf.Max(size.x, size.y) / 2; // Fit the area in orthographic view
-        }
-        else
-        {
-            captureCamera.fieldOfView = 60; // Adjust manually if needed
-        }
+        // if (captureCamera.orthographic)
+        // {
+        //     captureCamera.orthographicSize = Mathf.Max(size.x, size.y) / 2; // Fit the area in orthographic view
+        // }
+        // else
+        // {
+        //     captureCamera.fieldOfView = 60; // Adjust manually if needed
+        // }
 
         // 3. Create RenderTexture
         RenderTexture rt = new RenderTexture(screenshotWidth, screenshotHeight, 24);
