@@ -1,0 +1,819 @@
+package com.naitan.temp
+
+import android.annotation.SuppressLint
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.xr.compose.platform.LocalSpatialCapabilities
+import androidx.xr.compose.platform.LocalSpatialConfiguration
+import androidx.xr.compose.spatial.Subspace
+import androidx.xr.compose.subspace.SpatialPanel
+import androidx.xr.compose.subspace.layout.SubspaceModifier
+import androidx.xr.compose.subspace.layout.height
+import androidx.xr.compose.subspace.layout.width
+import com.bumptech.glide.integration.compose.ExperimentalGlideComposeApi
+import com.bumptech.glide.integration.compose.GlideImage
+import com.naitan.temp.ui.theme.TempTheme
+import kotlinx.coroutines.delay
+import kotlin.math.abs
+
+
+class MainActivity : ComponentActivity() {
+    @SuppressLint("RestrictedApi")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            TempTheme {
+                val spatialConfiguration = LocalSpatialConfiguration.current
+                if (LocalSpatialCapabilities.current.isSpatialUiEnabled) {
+                    Subspace {
+                        MySpatialOnboarding()
+                    }
+                } else {
+                    My2DOnboarding()
+                }
+            }
+        }
+    }
+}
+
+enum class OnboardingStep {
+    STEP_1,  // Wallpaper + Image + Text below image
+    STEP_2,  // Wallpaper + Text only
+    STEP_3,  // New Wallpaper + Same Text
+    STEP_4,  // New Wallpaper + Text + Small GIF bottom right
+    STEP_5,  // Wallpaper + Solid color bg + GIF + Text below GIF
+    STEP_6,  // Wallpaper + Solid color bg + Interactive button
+    STEP_7,  // Swipe gestures
+    COMPLETED // Final state - stays here
+}
+
+data class StepConfig(
+    val step: OnboardingStep,
+    val durationMs: Long
+)
+
+val stepConfigurations = listOf(
+    StepConfig(OnboardingStep.STEP_1, 2000L),
+    StepConfig(OnboardingStep.STEP_2, 2000L),
+    StepConfig(OnboardingStep.STEP_3, 200L),
+    StepConfig(OnboardingStep.STEP_4, 2000L),
+    StepConfig(OnboardingStep.STEP_5, 2000L)
+    // Steps 6 and 7 are interactive, no duration
+)
+
+enum class SwipeStage {
+    INITIAL,      // Show GIF + "Swipe Left"
+    SWIPE_RIGHT,  // Just text "Swipe Right"
+    SWIPE_UP,     // Just text "Swipe Up"
+    SWIPE_DOWN,   // Just text "Swipe Down"
+    FINAL         // Show final GIF + text
+}
+
+enum class SwipeDirection {
+    LEFT, RIGHT, UP, DOWN, NONE
+}
+
+@OptIn(ExperimentalGlideComposeApi::class)
+@Composable
+fun LayeredOnboarding(modifier: Modifier = Modifier) {
+    var currentStep by remember { mutableStateOf(OnboardingStep.STEP_1) }
+
+    // Auto-advance through steps with configured durations
+    LaunchedEffect(currentStep) {
+        val stepConfig = stepConfigurations.find { it.step == currentStep }
+        if (stepConfig != null) {
+            delay(stepConfig.durationMs)
+            currentStep = when (currentStep) {
+                OnboardingStep.STEP_1 -> OnboardingStep.STEP_2
+                OnboardingStep.STEP_2 -> OnboardingStep.STEP_3
+                OnboardingStep.STEP_3 -> OnboardingStep.STEP_4
+                OnboardingStep.STEP_4 -> OnboardingStep.STEP_5
+                OnboardingStep.STEP_5 -> OnboardingStep.STEP_6
+                else -> currentStep
+            }
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        // Background Wallpaper Layer
+        when (currentStep) {
+            OnboardingStep.STEP_1, OnboardingStep.STEP_2 -> {
+                Image(
+                    painter = painterResource(id = R.drawable.wallpaper_1),
+                    contentDescription = "Background wallpaper 1",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            OnboardingStep.STEP_3, OnboardingStep.STEP_4, OnboardingStep.STEP_5,
+            OnboardingStep.STEP_6, OnboardingStep.STEP_7, OnboardingStep.COMPLETED -> {
+                Image(
+                    painter = painterResource(id = R.drawable.wallpaper_2),
+                    contentDescription = "Background wallpaper 2",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+        }
+
+        // Content Layer based on step
+        when (currentStep) {
+            OnboardingStep.STEP_1 -> Step1Content()
+            OnboardingStep.STEP_2 -> Step2Content()
+            OnboardingStep.STEP_3 -> Step3Content()
+            OnboardingStep.STEP_4 -> Step4Content()
+            OnboardingStep.STEP_5 -> Step5Content()
+            OnboardingStep.STEP_6 -> {
+                Step6Content(
+                    onSequenceComplete = {
+                        currentStep = OnboardingStep.STEP_7
+                    }
+                )
+            }
+            OnboardingStep.STEP_7 -> {
+                Step7Content(
+                    onSwipeSequenceComplete = {
+                        currentStep = OnboardingStep.COMPLETED
+                    }
+                )
+            }
+            OnboardingStep.COMPLETED -> CompletedContent()
+        }
+    }
+}
+
+
+@Composable
+fun Step1Content() {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.step1_image),
+                contentDescription = "Step 1 image",
+                modifier = Modifier
+                    .size(300.dp)
+                    .padding(16.dp),
+                contentScale = ContentScale.Fit
+            )
+
+            Text(
+                text = "Welcome to the app!",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(top = 16.dp, start = 32.dp, end = 32.dp)
+                    .background(
+                        color = Color.Black.copy(alpha = 0.6f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                    )
+                    .padding(16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun Step2Content() {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Discover amazing features",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(horizontal = 48.dp)
+                    .background(
+                        color = Color.Black.copy(alpha = 0.7f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                    )
+                    .padding(24.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun Step3Content() {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Discover amazing features",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(horizontal = 48.dp)
+                    .background(
+                        color = Color.Black.copy(alpha = 0.7f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                    )
+                    .padding(24.dp)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalGlideComposeApi::class)
+@Composable
+fun Step4Content() {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = "Discover amazing features",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 48.dp)
+                    .background(
+                        color = Color.Black.copy(alpha = 0.7f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                    )
+                    .padding(24.dp)
+            )
+
+            GlideImage(
+                model = R.drawable.step4_small_gif,
+                contentDescription = "Small GIF",
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(120.dp)
+                    .padding(16.dp),
+                contentScale = ContentScale.Fit
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalGlideComposeApi::class)
+@Composable
+fun Step5Content() {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(400.dp)
+                    .wrapContentHeight()
+                    .background(
+                        color = Color(0xFF1E88E5).copy(alpha = 0.9f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                    )
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                GlideImage(
+                    model = R.drawable.step5_gif,
+                    contentDescription = "Step 5 GIF",
+                    modifier = Modifier
+                        .size(200.dp)
+                        .padding(16.dp),
+                    contentScale = ContentScale.Fit
+                )
+
+                Text(
+                    text = "Let's get started!",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+            }
+        }
+    }
+}
+
+enum class ButtonPosition {
+    BOTTOM,  // Initial position
+    TOP,     // After first click
+    LEFT,    // After second click
+    RIGHT    // After third click
+}
+
+@OptIn(ExperimentalGlideComposeApi::class)
+@Composable
+fun Step6Content(onSequenceComplete: () -> Unit) {
+    var buttonPosition by remember { mutableStateOf(ButtonPosition.BOTTOM) }
+    var showGif by remember { mutableStateOf(true) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
+    // Animate button scale on hover
+    val buttonScale by animateFloatAsState(
+        targetValue = if (isHovered) 1.3f else 1f,
+        animationSpec = tween(durationMillis = 300),
+        label = "buttonScale"
+    )
+
+    // Animate button position with offsets
+    val horizontalOffset by animateDpAsState(
+        targetValue = when (buttonPosition) {
+            ButtonPosition.LEFT -> (-120).dp
+            ButtonPosition.RIGHT -> 120.dp
+            else -> 0.dp
+        },
+        animationSpec = tween(durationMillis = 500),
+        label = "horizontalOffset"
+    )
+
+    val verticalOffset by animateDpAsState(
+        targetValue = when (buttonPosition) {
+            ButtonPosition.TOP -> (-140).dp
+            ButtonPosition.BOTTOM -> 0.dp
+            else -> (-70).dp  // Middle height for LEFT and RIGHT
+        },
+        animationSpec = tween(durationMillis = 500),
+        label = "verticalOffset"
+    )
+
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            // Solid color background panel
+            Column(
+                modifier = Modifier
+                    .width(450.dp)
+                    .height(500.dp)
+                    .background(
+                        color = Color(0xFF1E88E5).copy(alpha = 0.9f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                    )
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Container for GIF and text at top
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    // GIF - disappears after first click
+                    AnimatedVisibility(
+                        visible = showGif,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            GlideImage(
+                                model = if (isHovered && buttonPosition == ButtonPosition.BOTTOM)
+                                    R.drawable.step4_small_gif
+                                else
+                                    R.drawable.step5_gif,
+                                contentDescription = "Step 6 GIF",
+                                modifier = Modifier
+                                    .size(200.dp)
+                                    .padding(16.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+
+                    // Text - changes based on state
+                    Text(
+                        text = when {
+                            buttonPosition == ButtonPosition.BOTTOM && isHovered -> "Now click the button!"
+                            buttonPosition == ButtonPosition.BOTTOM -> "Move your pointer to the button"
+                            else -> "Click the button"
+                        },
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = if (showGif) 16.dp else 48.dp, bottom = 24.dp)
+                    )
+                }
+
+                // Button container - positioned relative to its starting position
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Green circular button with animated position
+                    Box(
+                        modifier = Modifier
+                            .offset(x = horizontalOffset, y = verticalOffset)
+                            .size(100.dp)
+                            .scale(buttonScale)
+                            .clip(CircleShape)
+                            .background(Color(0xFF4CAF50))
+                            .hoverable(interactionSource = interactionSource)
+                            .clickable(
+                                interactionSource = interactionSource,
+                                indication = null
+                            ) {
+                                when (buttonPosition) {
+                                    ButtonPosition.BOTTOM -> {
+                                        showGif = false
+                                        buttonPosition = ButtonPosition.TOP
+                                    }
+                                    ButtonPosition.TOP -> {
+                                        buttonPosition = ButtonPosition.LEFT
+                                    }
+                                    ButtonPosition.LEFT -> {
+                                        buttonPosition = ButtonPosition.RIGHT
+                                    }
+                                    ButtonPosition.RIGHT -> {
+                                        // Sequence complete
+                                        onSequenceComplete()
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isHovered) "✓" else "→",
+                            fontSize = 40.sp,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+@OptIn(ExperimentalGlideComposeApi::class)
+@Composable
+fun Step7Content(onSwipeSequenceComplete: () -> Unit) {
+    var currentSwipeStage by remember { mutableStateOf(SwipeStage.INITIAL) }
+    var totalDragX by remember { mutableStateOf(0f) }
+    var totalDragY by remember { mutableStateOf(0f) }
+
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            // Fixed panel - doesn't move
+            Column(
+                modifier = Modifier
+                    .width(450.dp)
+                    .height(500.dp)
+                    .background(
+                        color = Color(0xFF1E88E5).copy(alpha = 0.9f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                    )
+                    .pointerInput(currentSwipeStage) {
+                        detectDragGestures(
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                totalDragX += dragAmount.x
+                                totalDragY += dragAmount.y
+                            },
+                            onDragEnd = {
+                                // Determine swipe direction based on accumulated drag
+                                val detectedDirection = if (abs(totalDragX) > abs(totalDragY)) {
+                                    when {
+                                        totalDragX > 100 -> SwipeDirection.RIGHT
+                                        totalDragX < -100 -> SwipeDirection.LEFT
+                                        else -> SwipeDirection.NONE
+                                    }
+                                } else {
+                                    when {
+                                        totalDragY > 100 -> SwipeDirection.DOWN
+                                        totalDragY < -100 -> SwipeDirection.UP
+                                        else -> SwipeDirection.NONE
+                                    }
+                                }
+
+                                // Reset drag totals
+                                totalDragX = 0f
+                                totalDragY = 0f
+
+                                // Process the swipe based on current stage
+                                when (currentSwipeStage) {
+                                    SwipeStage.INITIAL -> {
+                                        if (detectedDirection == SwipeDirection.LEFT) {
+                                            currentSwipeStage = SwipeStage.SWIPE_RIGHT
+                                        }
+                                    }
+                                    SwipeStage.SWIPE_RIGHT -> {
+                                        if (detectedDirection == SwipeDirection.RIGHT) {
+                                            currentSwipeStage = SwipeStage.SWIPE_UP
+                                        }
+                                    }
+                                    SwipeStage.SWIPE_UP -> {
+                                        if (detectedDirection == SwipeDirection.UP) {
+                                            currentSwipeStage = SwipeStage.SWIPE_DOWN
+                                        }
+                                    }
+                                    SwipeStage.SWIPE_DOWN -> {
+                                        if (detectedDirection == SwipeDirection.DOWN) {
+                                            currentSwipeStage = SwipeStage.FINAL
+                                        }
+                                    }
+                                    SwipeStage.FINAL -> {
+                                        // Stay on final
+                                    }
+                                }
+                            }
+                        )
+                    }
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Animated content that slides based on swipe direction
+                AnimatedContent(
+                    targetState = currentSwipeStage,
+                    transitionSpec = {
+                        // Determine slide direction based on transition
+                        val (initial, target) = this.initialState to this.targetState
+
+                        when {
+                            // Left swipe: content slides out left, new content enters from right
+                            initial == SwipeStage.INITIAL && target == SwipeStage.SWIPE_RIGHT -> {
+                                (slideInHorizontally(
+                                    initialOffsetX = { fullWidth -> fullWidth },
+                                    animationSpec = tween(400)
+                                ) togetherWith slideOutHorizontally(
+                                    targetOffsetX = { fullWidth -> -fullWidth },
+                                    animationSpec = tween(400)
+                                )).using(SizeTransform(clip = false))
+                            }
+                            // Right swipe: content slides out right, new content enters from left
+                            initial == SwipeStage.SWIPE_RIGHT && target == SwipeStage.SWIPE_UP -> {
+                                (slideInHorizontally(
+                                    initialOffsetX = { fullWidth -> -fullWidth },
+                                    animationSpec = tween(400)
+                                ) togetherWith slideOutHorizontally(
+                                    targetOffsetX = { fullWidth -> fullWidth },
+                                    animationSpec = tween(400)
+                                )).using(SizeTransform(clip = false))
+                            }
+                            // Up swipe: content slides out up, new content enters from bottom
+                            initial == SwipeStage.SWIPE_UP && target == SwipeStage.SWIPE_DOWN -> {
+                                (slideInVertically(
+                                    initialOffsetY = { fullHeight -> fullHeight },
+                                    animationSpec = tween(400)
+                                ) togetherWith slideOutVertically(
+                                    targetOffsetY = { fullHeight -> -fullHeight },
+                                    animationSpec = tween(400)
+                                )).using(SizeTransform(clip = false))
+                            }
+                            // Down swipe: content slides out down, new content enters from top
+                            initial == SwipeStage.SWIPE_DOWN && target == SwipeStage.FINAL -> {
+                                (slideInVertically(
+                                    initialOffsetY = { fullHeight -> -fullHeight },
+                                    animationSpec = tween(400)
+                                ) togetherWith slideOutVertically(
+                                    targetOffsetY = { fullHeight -> fullHeight },
+                                    animationSpec = tween(400)
+                                )).using(SizeTransform(clip = false))
+                            }
+                            else -> {
+                                // Default fade transition
+                                (fadeIn(animationSpec = tween(400)) togetherWith
+                                        fadeOut(animationSpec = tween(400))).using(SizeTransform(clip = false))
+                            }
+                        }
+                    },
+                    label = "swipe_content_animation"
+                ) { targetStage ->
+                    // Content for each stage
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        when (targetStage) {
+                            SwipeStage.INITIAL -> {
+                                GlideImage(
+                                    model = R.drawable.step5_gif,
+                                    contentDescription = "Swipe left GIF",
+                                    modifier = Modifier
+                                        .size(200.dp)
+                                        .padding(16.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+
+                                Text(
+                                    text = "Swipe Left ←",
+                                    fontSize = 28.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(top = 24.dp)
+                                )
+                            }
+                            SwipeStage.SWIPE_RIGHT -> {
+                                Text(
+                                    text = "Swipe Right →",
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 80.dp)
+                                )
+                            }
+                            SwipeStage.SWIPE_UP -> {
+                                Text(
+                                    text = "Swipe Up ↑",
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 80.dp)
+                                )
+                            }
+                            SwipeStage.SWIPE_DOWN -> {
+                                Text(
+                                    text = "Swipe Down ↓",
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 80.dp)
+                                )
+                            }
+                            SwipeStage.FINAL -> {
+                                GlideImage(
+                                    model = R.drawable.step4_small_gif,
+                                    contentDescription = "Final GIF",
+                                    modifier = Modifier
+                                        .size(200.dp)
+                                        .padding(16.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+
+                                Text(
+                                    text = "Great job! You've mastered the gestures!",
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(top = 24.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Auto-advance after showing final stage
+    LaunchedEffect(currentSwipeStage) {
+        if (currentSwipeStage == SwipeStage.FINAL) {
+            delay(3000)
+            onSwipeSequenceComplete()
+        }
+    }
+}
+
+@Composable
+fun CompletedContent() {
+    AnimatedVisibility(
+        visible = true,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(450.dp)
+                    .wrapContentHeight()
+                    .background(
+                        color = Color(0xFF4CAF50).copy(alpha = 0.9f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                    )
+                    .padding(48.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "✓",
+                    fontSize = 80.sp,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+
+                Text(
+                    text = "Onboarding Complete!",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@SuppressLint("RestrictedApi")
+@Composable
+fun MySpatialOnboarding() {
+    SpatialPanel(
+        SubspaceModifier
+            .width(1280.dp)
+            .height(800.dp)
+    ) {
+        LayeredOnboarding()
+    }
+}
+
+@Composable
+fun My2DOnboarding() {
+    LayeredOnboarding()
+}
