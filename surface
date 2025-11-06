@@ -1,819 +1,623 @@
-package com.naitan.temp
+package com.example.cursorgestures
 
 import android.annotation.SuppressLint
+import android.graphics.Color
+import android.graphics.drawable.Drawable
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.view.MotionEvent
+import android.view.View
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.xr.compose.platform.LocalSpatialCapabilities
-import androidx.xr.compose.platform.LocalSpatialConfiguration
-import androidx.xr.compose.spatial.Subspace
-import androidx.xr.compose.subspace.SpatialPanel
-import androidx.xr.compose.subspace.layout.SubspaceModifier
-import androidx.xr.compose.subspace.layout.height
-import androidx.xr.compose.subspace.layout.width
-import com.bumptech.glide.integration.compose.ExperimentalGlideComposeApi
-import com.bumptech.glide.integration.compose.GlideImage
-import com.naitan.temp.ui.theme.TempTheme
-import kotlinx.coroutines.delay
-import kotlin.math.abs
+import androidx.appcompat.app.AppCompatActivity
+import com.ss.nativelib.NativeLib
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.FileWriter
 
 
-class MainActivity : ComponentActivity() {
-    @SuppressLint("RestrictedApi")
+class TapGrid : AppCompatActivity() {
+
+    private lateinit var views: Array<View>
+    private lateinit var originalBackgrounds: Array<Drawable?>
+    private lateinit var usernameInput: EditText
+    private lateinit var startButton: Button
+    private lateinit var restartButton: Button
+    private lateinit var countdownText: TextView
+    private lateinit var instructionText: TextView
+
+    private var currentGridIndex = 0
+    private var tapsRemaining = 5
+    private val totalTapsPerGrid = 5
+    private val totalGrids = 6
+
+    private val allGridData = mutableListOf<GridSessionData>()
+    private var currentGridSession: GridSessionData? = null
+
+    private lateinit var nativeCode: NativeLib
+    private val handler = Handler(Looper.getMainLooper())
+    private var isMonitoring = false
+    private var lastGestureStatus = 0
+    private var currentGestureDownTime: Long = 0
+
+    private var isTestActive = false
+    private var username = ""
+
+    private val gestureMonitoringRunnable = object : Runnable {
+        override fun run() {
+            if (isMonitoring) {
+                try {
+                    val status = nativeCode.nativeGetHandGestures()
+                    handleGestureStatus(status)
+                } catch (e: Exception) {
+                    Log.d("TAP", "Error getting hand gestures: ${e.message}")
+                }
+                handler.postDelayed(this, 50)
+            }
+        }
+    }
+
+    data class TapData(
+        val view: String,
+        val downTimestamp: Long,
+        val upTimestamp: Long,
+        val duration: Long
+    )
+
+    data class GridSessionData(
+        val gridName: String,
+        val gridIndex: Int,
+        val tapEvents: MutableList<TapData> = mutableListOf(),
+        val gestureEvents: MutableList<TapData> = mutableListOf(),
+        val startTime: Long = System.currentTimeMillis(),
+        var endTime: Long = 0
+    )
+
+    data class TestSession(
+        val username: String,
+        val testStartTime: Long,
+        val testEndTime: Long,
+        val gridSessions: List<GridSessionData>
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            TempTheme {
-                val spatialConfiguration = LocalSpatialConfiguration.current
-                if (LocalSpatialCapabilities.current.isSpatialUiEnabled) {
-                    Subspace {
-                        MySpatialOnboarding()
-                    }
-                } else {
-                    My2DOnboarding()
-                }
+        setContentView(R.layout.tap_grid)
+
+        initViews()
+        setupListeners()
+        initNativeLibrary()
+        
+        // Initial state - test not started
+        setTestInactive()
+    }
+
+    private fun initViews() {
+        views = arrayOf(
+            findViewById<View>(R.id.view1),
+            findViewById<View>(R.id.view2),
+            findViewById<View>(R.id.view3),
+            findViewById<View>(R.id.view4),
+            findViewById<View>(R.id.view5),
+            findViewById<View>(R.id.view6)
+        )
+        
+        // Store original backgrounds
+        originalBackgrounds = Array(views.size) { i -> views[i].background }
+        
+        usernameInput = findViewById(R.id.usernameInput)
+        startButton = findViewById(R.id.startButton)
+        restartButton = findViewById(R.id.restartButton)
+        countdownText = findViewById(R.id.countdownText)
+        instructionText = findViewById(R.id.instructionText)
+    }
+
+    private fun setupListeners() {
+        startButton.setOnClickListener {
+            val name = usernameInput.text.toString().trim()
+            if (name.isEmpty()) {
+                Toast.makeText(this, "Please enter a username", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
+            username = name
+            startTest()
+        }
+
+        restartButton.setOnClickListener {
+            restartTest()
+        }
+
+        for (i in views.indices) {
+            setupTouchListener(views[i], i)
         }
     }
-}
 
-enum class OnboardingStep {
-    STEP_1,  // Wallpaper + Image + Text below image
-    STEP_2,  // Wallpaper + Text only
-    STEP_3,  // New Wallpaper + Same Text
-    STEP_4,  // New Wallpaper + Text + Small GIF bottom right
-    STEP_5,  // Wallpaper + Solid color bg + GIF + Text below GIF
-    STEP_6,  // Wallpaper + Solid color bg + Interactive button
-    STEP_7,  // Swipe gestures
-    COMPLETED // Final state - stays here
-}
+    private fun startTest() {
+        isTestActive = true
+        currentGridIndex = 0
+        tapsRemaining = totalTapsPerGrid
+        allGridData.clear()
+        
+        // Hide start controls
+        usernameInput.visibility = View.GONE
+        startButton.visibility = View.GONE
+        restartButton.visibility = View.GONE
+        
+        // Show countdown and instructions
+        countdownText.visibility = View.VISIBLE
+        instructionText.visibility = View.VISIBLE
+        
+        // Start first grid
+        startGridSession()
+    }
 
-data class StepConfig(
-    val step: OnboardingStep,
-    val durationMs: Long
-)
+    private fun startGridSession() {
+        if (currentGridIndex >= totalGrids) {
+            completeTest()
+            return
+        }
 
-val stepConfigurations = listOf(
-    StepConfig(OnboardingStep.STEP_1, 2000L),
-    StepConfig(OnboardingStep.STEP_2, 2000L),
-    StepConfig(OnboardingStep.STEP_3, 200L),
-    StepConfig(OnboardingStep.STEP_4, 2000L),
-    StepConfig(OnboardingStep.STEP_5, 2000L)
-    // Steps 6 and 7 are interactive, no duration
-)
+        val gridName = resources.getResourceEntryName(views[currentGridIndex].id)
+        currentGridSession = GridSessionData(
+            gridName = gridName,
+            gridIndex = currentGridIndex
+        )
+        
+        tapsRemaining = totalTapsPerGrid
+        updateUI()
+        highlightActiveGrid()
+        
+        Log.d("TAP", "Started session for $gridName (Grid ${currentGridIndex + 1}/$totalGrids)")
+    }
 
-enum class SwipeStage {
-    INITIAL,      // Show GIF + "Swipe Left"
-    SWIPE_RIGHT,  // Just text "Swipe Right"
-    SWIPE_UP,     // Just text "Swipe Up"
-    SWIPE_DOWN,   // Just text "Swipe Down"
-    FINAL         // Show final GIF + text
-}
+    private fun highlightActiveGrid() {
+        // Reset all grids to original background
+        for (i in views.indices) {
+            views[i].background = originalBackgrounds[i]
+            views[i].alpha = 0.3f
+        }
+        
+        // Highlight active grid with green background
+        views[currentGridIndex].setBackgroundColor(Color.parseColor("#4CAF50"))
+        views[currentGridIndex].alpha = 1.0f
+    }
 
-enum class SwipeDirection {
-    LEFT, RIGHT, UP, DOWN, NONE
-}
+    private fun updateUI() {
+        countdownText.text = "Taps remaining: $tapsRemaining"
+        instructionText.text = "Grid ${currentGridIndex + 1}/$totalGrids - Tap and Pinch"
+    }
 
-@OptIn(ExperimentalGlideComposeApi::class)
-@Composable
-fun LayeredOnboarding(modifier: Modifier = Modifier) {
-    var currentStep by remember { mutableStateOf(OnboardingStep.STEP_1) }
-
-    // Auto-advance through steps with configured durations
-    LaunchedEffect(currentStep) {
-        val stepConfig = stepConfigurations.find { it.step == currentStep }
-        if (stepConfig != null) {
-            delay(stepConfig.durationMs)
-            currentStep = when (currentStep) {
-                OnboardingStep.STEP_1 -> OnboardingStep.STEP_2
-                OnboardingStep.STEP_2 -> OnboardingStep.STEP_3
-                OnboardingStep.STEP_3 -> OnboardingStep.STEP_4
-                OnboardingStep.STEP_4 -> OnboardingStep.STEP_5
-                OnboardingStep.STEP_5 -> OnboardingStep.STEP_6
-                else -> currentStep
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupTouchListener(view: View, viewIndex: Int) {
+        var downTime: Long = 0
+        
+        view.setOnTouchListener { _, event ->
+            if (!isTestActive || viewIndex != currentGridIndex) {
+                return@setOnTouchListener false
             }
-        }
-    }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        // Background Wallpaper Layer
-        when (currentStep) {
-            OnboardingStep.STEP_1, OnboardingStep.STEP_2 -> {
-                Image(
-                    painter = painterResource(id = R.drawable.wallpaper_1),
-                    contentDescription = "Background wallpaper 1",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-            OnboardingStep.STEP_3, OnboardingStep.STEP_4, OnboardingStep.STEP_5,
-            OnboardingStep.STEP_6, OnboardingStep.STEP_7, OnboardingStep.COMPLETED -> {
-                Image(
-                    painter = painterResource(id = R.drawable.wallpaper_2),
-                    contentDescription = "Background wallpaper 2",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-        }
-
-        // Content Layer based on step
-        when (currentStep) {
-            OnboardingStep.STEP_1 -> Step1Content()
-            OnboardingStep.STEP_2 -> Step2Content()
-            OnboardingStep.STEP_3 -> Step3Content()
-            OnboardingStep.STEP_4 -> Step4Content()
-            OnboardingStep.STEP_5 -> Step5Content()
-            OnboardingStep.STEP_6 -> {
-                Step6Content(
-                    onSequenceComplete = {
-                        currentStep = OnboardingStep.STEP_7
-                    }
-                )
-            }
-            OnboardingStep.STEP_7 -> {
-                Step7Content(
-                    onSwipeSequenceComplete = {
-                        currentStep = OnboardingStep.COMPLETED
-                    }
-                )
-            }
-            OnboardingStep.COMPLETED -> CompletedContent()
-        }
-    }
-}
-
-
-@Composable
-fun Step1Content() {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.step1_image),
-                contentDescription = "Step 1 image",
-                modifier = Modifier
-                    .size(300.dp)
-                    .padding(16.dp),
-                contentScale = ContentScale.Fit
-            )
-
-            Text(
-                text = "Welcome to the app!",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .padding(top = 16.dp, start = 32.dp, end = 32.dp)
-                    .background(
-                        color = Color.Black.copy(alpha = 0.6f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                    )
-                    .padding(16.dp)
-            )
-        }
-    }
-}
-
-@Composable
-fun Step2Content() {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Discover amazing features",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .padding(horizontal = 48.dp)
-                    .background(
-                        color = Color.Black.copy(alpha = 0.7f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-                    )
-                    .padding(24.dp)
-            )
-        }
-    }
-}
-
-@Composable
-fun Step3Content() {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Discover amazing features",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .padding(horizontal = 48.dp)
-                    .background(
-                        color = Color.Black.copy(alpha = 0.7f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-                    )
-                    .padding(24.dp)
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalGlideComposeApi::class)
-@Composable
-fun Step4Content() {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Text(
-                text = "Discover amazing features",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 48.dp)
-                    .background(
-                        color = Color.Black.copy(alpha = 0.7f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-                    )
-                    .padding(24.dp)
-            )
-
-            GlideImage(
-                model = R.drawable.step4_small_gif,
-                contentDescription = "Small GIF",
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(120.dp)
-                    .padding(16.dp),
-                contentScale = ContentScale.Fit
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalGlideComposeApi::class)
-@Composable
-fun Step5Content() {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .width(400.dp)
-                    .wrapContentHeight()
-                    .background(
-                        color = Color(0xFF1E88E5).copy(alpha = 0.9f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-                    )
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                GlideImage(
-                    model = R.drawable.step5_gif,
-                    contentDescription = "Step 5 GIF",
-                    modifier = Modifier
-                        .size(200.dp)
-                        .padding(16.dp),
-                    contentScale = ContentScale.Fit
-                )
-
-                Text(
-                    text = "Let's get started!",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
-            }
-        }
-    }
-}
-
-enum class ButtonPosition {
-    BOTTOM,  // Initial position
-    TOP,     // After first click
-    LEFT,    // After second click
-    RIGHT    // After third click
-}
-
-@OptIn(ExperimentalGlideComposeApi::class)
-@Composable
-fun Step6Content(onSequenceComplete: () -> Unit) {
-    var buttonPosition by remember { mutableStateOf(ButtonPosition.BOTTOM) }
-    var showGif by remember { mutableStateOf(true) }
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
-
-    // Animate button scale on hover
-    val buttonScale by animateFloatAsState(
-        targetValue = if (isHovered) 1.3f else 1f,
-        animationSpec = tween(durationMillis = 300),
-        label = "buttonScale"
-    )
-
-    // Animate button position with offsets
-    val horizontalOffset by animateDpAsState(
-        targetValue = when (buttonPosition) {
-            ButtonPosition.LEFT -> (-120).dp
-            ButtonPosition.RIGHT -> 120.dp
-            else -> 0.dp
-        },
-        animationSpec = tween(durationMillis = 500),
-        label = "horizontalOffset"
-    )
-
-    val verticalOffset by animateDpAsState(
-        targetValue = when (buttonPosition) {
-            ButtonPosition.TOP -> (-140).dp
-            ButtonPosition.BOTTOM -> 0.dp
-            else -> (-70).dp  // Middle height for LEFT and RIGHT
-        },
-        animationSpec = tween(durationMillis = 500),
-        label = "verticalOffset"
-    )
-
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            // Solid color background panel
-            Column(
-                modifier = Modifier
-                    .width(450.dp)
-                    .height(500.dp)
-                    .background(
-                        color = Color(0xFF1E88E5).copy(alpha = 0.9f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-                    )
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                // Container for GIF and text at top
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    // GIF - disappears after first click
-                    AnimatedVisibility(
-                        visible = showGif,
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            GlideImage(
-                                model = if (isHovered && buttonPosition == ButtonPosition.BOTTOM)
-                                    R.drawable.step4_small_gif
-                                else
-                                    R.drawable.step5_gif,
-                                contentDescription = "Step 6 GIF",
-                                modifier = Modifier
-                                    .size(200.dp)
-                                    .padding(16.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
-                    }
-
-                    // Text - changes based on state
-                    Text(
-                        text = when {
-                            buttonPosition == ButtonPosition.BOTTOM && isHovered -> "Now click the button!"
-                            buttonPosition == ButtonPosition.BOTTOM -> "Move your pointer to the button"
-                            else -> "Click the button"
-                        },
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = if (showGif) 16.dp else 48.dp, bottom = 24.dp)
-                    )
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    downTime = System.currentTimeMillis()
+                    view.setBackgroundColor(Color.BLACK)
+                    true
                 }
 
-                // Button container - positioned relative to its starting position
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Green circular button with animated position
-                    Box(
-                        modifier = Modifier
-                            .offset(x = horizontalOffset, y = verticalOffset)
-                            .size(100.dp)
-                            .scale(buttonScale)
-                            .clip(CircleShape)
-                            .background(Color(0xFF4CAF50))
-                            .hoverable(interactionSource = interactionSource)
-                            .clickable(
-                                interactionSource = interactionSource,
-                                indication = null
-                            ) {
-                                when (buttonPosition) {
-                                    ButtonPosition.BOTTOM -> {
-                                        showGif = false
-                                        buttonPosition = ButtonPosition.TOP
-                                    }
-                                    ButtonPosition.TOP -> {
-                                        buttonPosition = ButtonPosition.LEFT
-                                    }
-                                    ButtonPosition.LEFT -> {
-                                        buttonPosition = ButtonPosition.RIGHT
-                                    }
-                                    ButtonPosition.RIGHT -> {
-                                        // Sequence complete
-                                        onSequenceComplete()
-                                    }
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (isHovered) "✓" else "→",
-                            fontSize = 40.sp,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-@OptIn(ExperimentalGlideComposeApi::class)
-@Composable
-fun Step7Content(onSwipeSequenceComplete: () -> Unit) {
-    var currentSwipeStage by remember { mutableStateOf(SwipeStage.INITIAL) }
-    var totalDragX by remember { mutableStateOf(0f) }
-    var totalDragY by remember { mutableStateOf(0f) }
-
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            // Fixed panel - doesn't move
-            Column(
-                modifier = Modifier
-                    .width(450.dp)
-                    .height(500.dp)
-                    .background(
-                        color = Color(0xFF1E88E5).copy(alpha = 0.9f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                MotionEvent.ACTION_UP -> {
+                    val upTime = System.currentTimeMillis()
+                    val duration = upTime - downTime
+                    
+                    // Restore active grid color
+                    view.setBackgroundColor(Color.parseColor("#4CAF50"))
+                    
+                    val tapData = TapData(
+                        view = resources.getResourceEntryName(view.id),
+                        downTimestamp = downTime,
+                        upTimestamp = upTime,
+                        duration = duration
                     )
-                    .pointerInput(currentSwipeStage) {
-                        detectDragGestures(
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                totalDragX += dragAmount.x
-                                totalDragY += dragAmount.y
-                            },
-                            onDragEnd = {
-                                // Determine swipe direction based on accumulated drag
-                                val detectedDirection = if (abs(totalDragX) > abs(totalDragY)) {
-                                    when {
-                                        totalDragX > 100 -> SwipeDirection.RIGHT
-                                        totalDragX < -100 -> SwipeDirection.LEFT
-                                        else -> SwipeDirection.NONE
-                                    }
-                                } else {
-                                    when {
-                                        totalDragY > 100 -> SwipeDirection.DOWN
-                                        totalDragY < -100 -> SwipeDirection.UP
-                                        else -> SwipeDirection.NONE
-                                    }
-                                }
-
-                                // Reset drag totals
-                                totalDragX = 0f
-                                totalDragY = 0f
-
-                                // Process the swipe based on current stage
-                                when (currentSwipeStage) {
-                                    SwipeStage.INITIAL -> {
-                                        if (detectedDirection == SwipeDirection.LEFT) {
-                                            currentSwipeStage = SwipeStage.SWIPE_RIGHT
-                                        }
-                                    }
-                                    SwipeStage.SWIPE_RIGHT -> {
-                                        if (detectedDirection == SwipeDirection.RIGHT) {
-                                            currentSwipeStage = SwipeStage.SWIPE_UP
-                                        }
-                                    }
-                                    SwipeStage.SWIPE_UP -> {
-                                        if (detectedDirection == SwipeDirection.UP) {
-                                            currentSwipeStage = SwipeStage.SWIPE_DOWN
-                                        }
-                                    }
-                                    SwipeStage.SWIPE_DOWN -> {
-                                        if (detectedDirection == SwipeDirection.DOWN) {
-                                            currentSwipeStage = SwipeStage.FINAL
-                                        }
-                                    }
-                                    SwipeStage.FINAL -> {
-                                        // Stay on final
-                                    }
-                                }
-                            }
-                        )
+                    
+                    currentGridSession?.tapEvents?.add(tapData)
+                    
+                    Log.d("TAP", "${tapData.view} - Tap Down=$downTime ms, Up=$upTime ms, Duration=$duration ms")
+                    
+                    // Decrement taps and check if grid is complete
+                    tapsRemaining--
+                    updateUI()
+                    
+                    if (tapsRemaining <= 0) {
+                        completeGridSession()
                     }
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                // Animated content that slides based on swipe direction
-                AnimatedContent(
-                    targetState = currentSwipeStage,
-                    transitionSpec = {
-                        // Determine slide direction based on transition
-                        val (initial, target) = this.initialState to this.targetState
-
-                        when {
-                            // Left swipe: content slides out left, new content enters from right
-                            initial == SwipeStage.INITIAL && target == SwipeStage.SWIPE_RIGHT -> {
-                                (slideInHorizontally(
-                                    initialOffsetX = { fullWidth -> fullWidth },
-                                    animationSpec = tween(400)
-                                ) togetherWith slideOutHorizontally(
-                                    targetOffsetX = { fullWidth -> -fullWidth },
-                                    animationSpec = tween(400)
-                                )).using(SizeTransform(clip = false))
-                            }
-                            // Right swipe: content slides out right, new content enters from left
-                            initial == SwipeStage.SWIPE_RIGHT && target == SwipeStage.SWIPE_UP -> {
-                                (slideInHorizontally(
-                                    initialOffsetX = { fullWidth -> -fullWidth },
-                                    animationSpec = tween(400)
-                                ) togetherWith slideOutHorizontally(
-                                    targetOffsetX = { fullWidth -> fullWidth },
-                                    animationSpec = tween(400)
-                                )).using(SizeTransform(clip = false))
-                            }
-                            // Up swipe: content slides out up, new content enters from bottom
-                            initial == SwipeStage.SWIPE_UP && target == SwipeStage.SWIPE_DOWN -> {
-                                (slideInVertically(
-                                    initialOffsetY = { fullHeight -> fullHeight },
-                                    animationSpec = tween(400)
-                                ) togetherWith slideOutVertically(
-                                    targetOffsetY = { fullHeight -> -fullHeight },
-                                    animationSpec = tween(400)
-                                )).using(SizeTransform(clip = false))
-                            }
-                            // Down swipe: content slides out down, new content enters from top
-                            initial == SwipeStage.SWIPE_DOWN && target == SwipeStage.FINAL -> {
-                                (slideInVertically(
-                                    initialOffsetY = { fullHeight -> -fullHeight },
-                                    animationSpec = tween(400)
-                                ) togetherWith slideOutVertically(
-                                    targetOffsetY = { fullHeight -> fullHeight },
-                                    animationSpec = tween(400)
-                                )).using(SizeTransform(clip = false))
-                            }
-                            else -> {
-                                // Default fade transition
-                                (fadeIn(animationSpec = tween(400)) togetherWith
-                                        fadeOut(animationSpec = tween(400))).using(SizeTransform(clip = false))
-                            }
-                        }
-                    },
-                    label = "swipe_content_animation"
-                ) { targetStage ->
-                    // Content for each stage
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .wrapContentHeight(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        when (targetStage) {
-                            SwipeStage.INITIAL -> {
-                                GlideImage(
-                                    model = R.drawable.step5_gif,
-                                    contentDescription = "Swipe left GIF",
-                                    modifier = Modifier
-                                        .size(200.dp)
-                                        .padding(16.dp),
-                                    contentScale = ContentScale.Fit
-                                )
-
-                                Text(
-                                    text = "Swipe Left ←",
-                                    fontSize = 28.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(top = 24.dp)
-                                )
-                            }
-                            SwipeStage.SWIPE_RIGHT -> {
-                                Text(
-                                    text = "Swipe Right →",
-                                    fontSize = 32.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 80.dp)
-                                )
-                            }
-                            SwipeStage.SWIPE_UP -> {
-                                Text(
-                                    text = "Swipe Up ↑",
-                                    fontSize = 32.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 80.dp)
-                                )
-                            }
-                            SwipeStage.SWIPE_DOWN -> {
-                                Text(
-                                    text = "Swipe Down ↓",
-                                    fontSize = 32.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 80.dp)
-                                )
-                            }
-                            SwipeStage.FINAL -> {
-                                GlideImage(
-                                    model = R.drawable.step4_small_gif,
-                                    contentDescription = "Final GIF",
-                                    modifier = Modifier
-                                        .size(200.dp)
-                                        .padding(16.dp),
-                                    contentScale = ContentScale.Fit
-                                )
-
-                                Text(
-                                    text = "Great job! You've mastered the gestures!",
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(top = 24.dp)
-                                )
-                            }
-                        }
-                    }
+                    
+                    true
                 }
+
+                else -> false
             }
         }
     }
 
-    // Auto-advance after showing final stage
-    LaunchedEffect(currentSwipeStage) {
-        if (currentSwipeStage == SwipeStage.FINAL) {
-            delay(3000)
-            onSwipeSequenceComplete()
+    private fun completeGridSession() {
+        currentGridSession?.let { session ->
+            session.endTime = System.currentTimeMillis()
+            allGridData.add(session)
+            
+            val totalTime = session.endTime - session.startTime
+            Log.d("TAP", "Completed ${session.gridName} - Total time: $totalTime ms, " +
+                    "Taps: ${session.tapEvents.size}, Gestures: ${session.gestureEvents.size}")
+        }
+        
+        // Move to next grid
+        currentGridIndex++
+        startGridSession()
+    }
+
+    private fun completeTest() {
+        isTestActive = false
+        
+        // Save to JSON
+        saveTestDataToJson()
+        
+        // Show completion message
+        countdownText.text = "Test Complete!"
+        instructionText.text = "Data saved to JSON file"
+        
+        // Reset all grids
+        for (i in views.indices) {
+            views[i].background = originalBackgrounds[i]
+            views[i].alpha = 1.0f
+        }
+        
+        // Show restart button
+        restartButton.visibility = View.VISIBLE
+        
+        Toast.makeText(this, "Test completed! Data saved.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun restartTest() {
+        // Reset all state
+        isTestActive = false
+        currentGridIndex = 0
+        tapsRemaining = totalTapsPerGrid
+        allGridData.clear()
+        currentGridSession = null
+        
+        // Reset UI
+        setTestInactive()
+        usernameInput.setText("")
+        
+        Toast.makeText(this, "Ready for new test", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun setTestInactive() {
+        usernameInput.visibility = View.VISIBLE
+        startButton.visibility = View.VISIBLE
+        restartButton.visibility = View.GONE
+        countdownText.visibility = View.GONE
+        instructionText.visibility = View.GONE
+        
+        // Reset all grids
+        for (i in views.indices) {
+            views[i].background = originalBackgrounds[i]
+            views[i].alpha = 1.0f
         }
     }
-}
 
-@Composable
-fun CompletedContent() {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .width(450.dp)
-                    .wrapContentHeight()
-                    .background(
-                        color = Color(0xFF4CAF50).copy(alpha = 0.9f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-                    )
-                    .padding(48.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "✓",
-                    fontSize = 80.sp,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 24.dp)
-                )
+    private fun saveTestDataToJson() {
+        try {
+            val testSession = TestSession(
+                username = username,
+                testStartTime = allGridData.firstOrNull()?.startTime ?: 0,
+                testEndTime = allGridData.lastOrNull()?.endTime ?: 0,
+                gridSessions = allGridData
+            )
+            
+            val jsonObject = JSONObject()
+            jsonObject.put("username", testSession.username)
+            jsonObject.put("testStartTime", testSession.testStartTime)
+            jsonObject.put("testEndTime", testSession.testEndTime)
+            jsonObject.put("totalDuration", testSession.testEndTime - testSession.testStartTime)
+            
+            val gridsArray = JSONArray()
+            for (gridSession in testSession.gridSessions) {
+                val gridObject = JSONObject()
+                gridObject.put("gridName", gridSession.gridName)
+                gridObject.put("gridIndex", gridSession.gridIndex)
+                gridObject.put("startTime", gridSession.startTime)
+                gridObject.put("endTime", gridSession.endTime)
+                gridObject.put("duration", gridSession.endTime - gridSession.startTime)
+                
+                // Tap events
+                val tapsArray = JSONArray()
+                for (tap in gridSession.tapEvents) {
+                    val tapObject = JSONObject()
+                    tapObject.put("view", tap.view)
+                    tapObject.put("downTimestamp", tap.downTimestamp)
+                    tapObject.put("upTimestamp", tap.upTimestamp)
+                    tapObject.put("duration", tap.duration)
+                    tapsArray.put(tapObject)
+                }
+                gridObject.put("tapEvents", tapsArray)
+                
+                // Gesture events
+                val gesturesArray = JSONArray()
+                for (gesture in gridSession.gestureEvents) {
+                    val gestureObject = JSONObject()
+                    gestureObject.put("type", gesture.view)
+                    gestureObject.put("downTimestamp", gesture.downTimestamp)
+                    gestureObject.put("upTimestamp", gesture.upTimestamp)
+                    gestureObject.put("duration", gesture.duration)
+                    gesturesArray.put(gestureObject)
+                }
+                gridObject.put("gestureEvents", gesturesArray)
+                
+                gridsArray.put(gridObject)
+            }
+            jsonObject.put("gridSessions", gridsArray)
+            
+            // Save to file
+            val fileName = "tap_test_${username}_${System.currentTimeMillis()}.json"
+            val file = File(getExternalFilesDir(null), fileName)
+            
+            FileWriter(file).use { writer ->
+                writer.write(jsonObject.toString(2)) // Pretty print with indent
+            }
+            
+            Log.d("TAP", "Data saved to: ${file.absolutePath}")
+            Log.d("TAP", "JSON Content:\n${jsonObject.toString(2)}")
+            
+        } catch (e: Exception) {
+            Log.e("TAP", "Error saving JSON: ${e.message}", e)
+            Toast.makeText(this, "Error saving data: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
-                Text(
-                    text = "Onboarding Complete!",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
+    private fun initNativeLibrary() {
+        try {
+            nativeCode = NativeLib()
+            nativeCode.nativeCreateClient()
+            startGestureMonitoring()
+            Log.d("TAP", "Native library initialized and gesture monitoring started")
+        } catch (e: Exception) {
+            Log.e("TAP", "Error initializing native library: ${e.message}")
+        }
+    }
+
+    private fun startGestureMonitoring() {
+        if (!isMonitoring) {
+            isMonitoring = true
+            handler.post(gestureMonitoringRunnable)
+            Log.d("TAP", "Gesture monitoring started")
+        }
+    }
+
+    private fun stopGestureMonitoring() {
+        isMonitoring = false
+        handler.removeCallbacks(gestureMonitoringRunnable)
+        Log.d("TAP", "Gesture monitoring stopped")
+    }
+
+    private fun handleGestureStatus(status: Int) {
+        if (!isTestActive) return
+        
+        when {
+            status == 1 && lastGestureStatus != 1 -> {
+                currentGestureDownTime = System.currentTimeMillis()
+                Log.d("TAP", "Gesture detected - Down time: $currentGestureDownTime ms")
+            }
+
+            status != 1 && lastGestureStatus == 1 -> {
+                val upTime = System.currentTimeMillis()
+                val duration = upTime - currentGestureDownTime
+                
+                val tapData = TapData(
+                    view = "PinchGesture",
+                    downTimestamp = currentGestureDownTime,
+                    upTimestamp = upTime,
+                    duration = duration
                 )
+                
+                currentGridSession?.gestureEvents?.add(tapData)
+                
+                Log.d("TAP", "PinchGesture - Down=$currentGestureDownTime ms, Up=$upTime ms, Duration=$duration ms")
             }
         }
+        lastGestureStatus = status
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::nativeCode.isInitialized) {
+            startGestureMonitoring()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopGestureMonitoring()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopGestureMonitoring()
+        if (::nativeCode.isInitialized) {
+            nativeCode.nativeDestroyClient()
+        }
+        Log.d("TAP", "TapGrid activity destroyed - gesture monitoring stopped")
     }
 }
 
-@SuppressLint("RestrictedApi")
-@Composable
-fun MySpatialOnboarding() {
-    SpatialPanel(
-        SubspaceModifier
-            .width(1280.dp)
-            .height(800.dp)
-    ) {
-        LayeredOnboarding()
-    }
-}
 
-@Composable
-fun My2DOnboarding() {
-    LayeredOnboarding()
-}
+
+
+
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <!-- Username Input Section (Top) -->
+    <EditText
+        android:id="@+id/usernameInput"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:hint="Enter your username"
+        android:inputType="text"
+        android:padding="12dp"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Start Button -->
+    <Button
+        android:id="@+id/startButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Start Test"
+        android:textSize="16sp"
+        android:padding="12dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/usernameInput"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- Instruction Text -->
+    <TextView
+        android:id="@+id/instructionText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Grid 1/6 - Tap and Pinch"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/startButton"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Countdown Text -->
+    <TextView
+        android:id="@+id/countdownText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Taps remaining: 5"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:textColor="#4CAF50"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/instructionText"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- GridLayout with 6 cells -->
+    <GridLayout
+        android:id="@+id/gridLayout"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:columnCount="3"
+        android:rowCount="2"
+        app:layout_constraintBottom_toTopOf="@id/restartButton"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/countdownText"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp">
+
+        <!-- Row 1 -->
+        <TextView
+            android:id="@+id/view1"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_columnWeight="1"
+            android:layout_rowWeight="1"
+            android:background="@drawable/cell_border"
+            android:gravity="center"
+            android:layout_margin="4dp"/>
+
+        <TextView
+            android:id="@+id/view2"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_columnWeight="1"
+            android:layout_rowWeight="1"
+            android:background="@drawable/cell_border"
+            android:gravity="center"
+            android:layout_margin="4dp"/>
+
+        <TextView
+            android:id="@+id/view3"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_columnWeight="1"
+            android:layout_rowWeight="1"
+            android:background="@drawable/cell_border"
+            android:gravity="center"
+            android:layout_margin="4dp"/>
+
+        <!-- Row 2 -->
+        <TextView
+            android:id="@+id/view4"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_columnWeight="1"
+            android:layout_rowWeight="1"
+            android:background="@drawable/cell_border"
+            android:gravity="center"
+            android:layout_margin="4dp"/>
+
+        <TextView
+            android:id="@+id/view5"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_columnWeight="1"
+            android:layout_rowWeight="1"
+            android:background="@drawable/cell_border"
+            android:gravity="center"
+            android:layout_margin="4dp"/>
+
+        <TextView
+            android:id="@+id/view6"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_columnWeight="1"
+            android:layout_rowWeight="1"
+            android:background="@drawable/cell_border"
+            android:gravity="center"
+            android:layout_margin="4dp"/>
+
+    </GridLayout>
+
+    <!-- Restart Button -->
+    <Button
+        android:id="@+id/restartButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Restart Test"
+        android:textSize="16sp"
+        android:padding="12dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
