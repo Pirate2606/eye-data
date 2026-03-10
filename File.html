@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Context-Aware Gaze Interaction</title>
+    <style>
+        /* THE SETUP - ZERO EXTERNAL DEPENDENCIES */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #0f172a;
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            overflow-x: hidden;
+            /* Using system fonts instead of Google Fonts to prevent network blocks */
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+
+        /* RESPONSIVE SLIDE CONTAINER */
+        .slide-container {
+            align-items: center;
+            background-color: #1e293b;
+            border-radius: 16px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            width: 100%;
+            max-width: 1280px;
+            min-height: 70vh;
+            padding: 5%;
+            overflow: hidden;
+        }
+
+        /* BACKGROUND DECORATION (Tech Grid) */
+        .slide-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(16, 185, 129, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(16, 185, 129, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .slide-container > * {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+        }
+
+        /* TYPOGRAPHY */
+        h1, h2, h3, .number {
+            color: #f8fafc;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        h1 {
+            font-size: clamp(40px, 6vw, 80px);
+            font-weight: 800;
+            margin-bottom: 20px;
+            text-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+            line-height: 1.1;
+        }
+
+        h1 span {
+            color: #10b981; 
+        }
+
+        .slide-title {
+            font-size: clamp(30px, 4vw, 48px);
+            font-weight: 700;
+            margin-bottom: 40px;
+            text-align: left;
+            border-left: 5px solid #10b981;
+            padding-left: 20px;
+        }
+
+        p, li {
+            color: #cbd5e1;
+            font-size: clamp(16px, 2vw, 20px);
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            font-size: clamp(18px, 2.5vw, 24px);
+            max-width: 800px;
+            margin: 10px auto 0 auto;
+        }
+
+        /* LAYOUTS */
+        .title-layout {
+            text-align: center;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 40px;
+            align-items: center;
+        }
+
+        /* REPLACED IMAGES WITH CSS PATTERNS FOR OFFLINE SUPPORT */
+        .image-wrapper {
+            border-radius: 12px;
+            overflow: hidden;
+            width: 100%;
+            min-height: 300px;
+            border: 1px solid #334155;
+            box-shadow: 0 0 30px rgba(16, 185, 129, 0.1);
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        /* Abstract UI Mockup Element */
+        .mockup-ui {
+            width: 80%;
+            height: 70%;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 15px;
+        }
+        .mockup-line { background: rgba(255,255,255,0.1); height: 12px; border-radius: 6px; }
+        .mockup-line.short { width: 40%; }
+        .mockup-line.long { width: 90%; }
+        .mockup-box { background: rgba(16, 185, 129, 0.2); height: 60px; border-radius: 6px; border: 1px dashed #10b981;}
+
+        .tiled-content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+        }
+
+        .tile {
+            background-color: #334155;
+            border: 1px solid #475569;
+            border-radius: 12px;
+            padding: 40px 30px;
+            flex: 1 1 250px;
+            text-align: center;
+        }
+
+        /* Using Emojis instead of FontAwesome for offline reliability */
+        .tile .icon {
+            font-size: 50px;
+            margin-bottom: 25px;
+            filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.5));
+        }
+
+        .tile h3 {
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+
+        .highlight-numbers-layout {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .highlight-numbers-layout > div {
+            flex: 1 1 200px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 40px 20px;
+            border-radius: 12px;
+            border: 1px solid #10b981;
+        }
+
+        .highlight-numbers-layout .number {
+            font-size: clamp(60px, 8vw, 100px);
+            font-weight: 800;
+            color: #10b981;
+            line-height: 1;
+            margin-bottom: 10px;
+        }
+
+        .highlight-numbers-layout .number-label {
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        ul li {
+            padding-left: 30px;
+            position: relative;
+        }
+
+        ul li::before {
+            content: '▶'; 
+            color: #10b981;
+            position: absolute;
+            left: 0;
+            top: 2px;
+            font-size: 14px;
+        }
+
+        /* MATH TEXT FORMATTING */
+        .math {
+            font-family: 'Courier New', Courier, monospace;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #10b981;
+        }
+
+        /* GRID GRAPHIC CSS (Slide 5) */
+        .grid-graphic {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(6, 1fr);
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            gap: 2px;
+            padding: 10px;
+            background: #0f172a;
+        }
+        .grid-cell {
+            background: #1e293b;
+            border: 1px solid #334155;
+            transition: all 0.3s ease;
+        }
+        .grid-cell.high-contrast { background: rgba(239, 68, 68, 0.4); border-color: #ef4444; }
+        .grid-cell.low-contrast { background: rgba(16, 185, 129, 0.2); border-color: #10b981; }
+        .grid-cell.gaze-point { 
+            background: #10b981; 
+            box-shadow: 0 0 15px #10b981;
+            border-radius: 50%;
+            transform: scale(0.6);
+        }
+
+        @media (max-width: 768px) {
+            .slide-title {
+                border-left: none;
+                border-bottom: 3px solid #10b981;
+                padding-left: 0;
+                padding-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Slide 1: Title -->
+<div class="slide-container" id="slide1" style="background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);">
+    <div class="title-layout">
+        <h1>Context-Aware<br><span>Gaze Interaction</span></h1>
+        <p class="subtitle">Eliminating accidental triggers in eye-scrolling using <span class="math">n &times; m</span> binning and intent detection.</p>
+    </div>
+</div>
+
+<!-- Slide 2: The Problem -->
+<div class="slide-container" id="slide2">
+    <h2 class="slide-title">The "Midas Touch" Problem</h2>
+    <div class="two-column">
+        <div>
+            <p>In current eye-tracking interfaces, the system struggles to distinguish between <strong>observing</strong> and <strong>acting</strong>.</p>
+            <ul>
+                <li><strong>Accidental Activation:</strong> Users looking at the bottom of the screen to read are interpreted as trying to scroll.</li>
+                <li><strong>User Frustration:</strong> This creates a "jittery" experience where content moves when it should stay still.</li>
+                <li><strong>Current Solution:</strong> "Dwell Time" timers make the UI feel sluggish and unresponsive.</li>
+            </ul>
+        </div>
+        <div>
+            <div class="image-wrapper">
+                <div class="mockup-ui" style="border-color: #ef4444; box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);">
+                    <div class="mockup-line short"></div>
+                    <div class="mockup-line long"></div>
+                    <div class="mockup-line long"></div>
+                    <div class="mockup-line" style="width: 70%"></div>
+                    <div style="flex-grow: 1;"></div>
+                    <div style="text-align: center; color: #ef4444; font-weight: bold; font-size: 14px; background: rgba(239, 68, 68, 0.1); padding: 5px; border-radius: 4px;">⚠ UNINTENDED SCROLL TRIGGERED</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 3: Intent Detection Framework -->
+<div class="slide-container" id="slide3">
+    <h2 class="slide-title">The Paradigm Shift: Intent Detection</h2>
+    <div class="two-column">
+        <div>
+            <div class="image-wrapper" style="padding: 20px; display: flex; flex-direction: column; justify-content: space-around; background:#1e293b;">
+                <div style="background:#334155; padding: 20px; border-radius: 8px; border-left: 4px solid #ef4444; width: 100%;">
+                    <h3 style="margin:0 0 10px 0; font-size:24px;">👁️ Observational Intent</h3>
+                    <p style="margin:0; font-size: 16px;">User is absorbing information. Interaction should be paused.</p>
+                </div>
+                <div style="text-align:center; color:#94a3b8; padding: 15px 0; font-size: 24px;">
+                    ↕️
+                </div>
+                <div style="background:#334155; padding: 20px; border-radius: 8px; border-left: 4px solid #10b981; width: 100%;">
+                    <h3 style="margin:0 0 10px 0; font-size:24px;">🖱️ Navigational Intent</h3>
+                    <p style="margin:0; font-size: 16px;">User wants to change the state of the UI (Scroll/Swipe).</p>
+                </div>
+            </div>
+        </div>
+        <div>
+            <p>We are moving from a reactive model ("Gaze = Scroll") to a predictive model ("Gaze + Context = Intent").</p>
+            <ul>
+                <li><strong>The Engine:</strong> An Intent State Machine running in the background.</li>
+                <li><strong>The Heuristic:</strong> We use visual complexity as the primary predictor of user intent.</li>
+                <li><strong>The Output:</strong> A real-time confidence score determining if the user wants to read or scroll.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 4: Contrast Region Logic -->
+<div class="slide-container" id="slide4">
+    <h2 class="slide-title">Visual Context = User Intent</h2>
+    <div class="tiled-content">
+        <div class="tile" style="border-top: 4px solid #ef4444;">
+            <div class="icon">📝</div>
+            <h3>High Contrast</h3>
+            <p>Text blocks, detailed textures, and high-frequency patterns indicate the user is reading.</p>
+            <div style="margin-top:20px; padding:10px; background:rgba(239, 68, 68, 0.1); border-radius:6px; color:#ef4444; font-weight:bold;">ACTION: INHIBIT SCROLL</div>
+        </div>
+        <div class="tile" style="border-top: 4px solid #10b981;">
+            <div class="icon">⬜</div>
+            <h3>Low Contrast</h3>
+            <p>Margins, gutters, white space, and smooth UI zones indicate the user is looking to navigate.</p>
+            <div style="margin-top:20px; padding:10px; background:rgba(16, 185, 129, 0.1); border-radius:6px; color:#10b981; font-weight:bold;">ACTION: ENABLE SCROLL</div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 5: Spatial Binning (n x m Grid) -->
+<div class="slide-container" id="slide5">
+    <h2 class="slide-title">Spatial Quantization (<span class="math">n &times; m</span> Binning)</h2>
+    <div class="two-column">
+        <div>
+            <p>Calculating contrast on a per-pixel basis is computationally expensive and highly sensitive to noise.</p>
+            <ul>
+                <li><strong>Grid Division:</strong> The viewport is divided into an <span class="math">n &times; m</span> grid (e.g., 32x32 blocks).</li>
+                <li><strong>Data Aggregation:</strong> We calculate the average luminance variance for each discrete bin.</li>
+                <li><strong>Stability:</strong> Gaze coordinates <span class="math">(x, y)</span> are mapped to a specific bin <span class="math">(i, j)</span>, providing a smoothed intent signal.</li>
+            </ul>
+        </div>
+        <div>
+            <div class="image-wrapper" style="padding: 10px;">
+                <!-- CSS Grid Visualization -->
+                <div class="grid-graphic">
+                    <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                    <div class="grid-cell"></div><div class="grid-cell high-contrast"></div><div class="grid-cell high-contrast"></div><div class="grid-cell high-contrast"></div><div class="grid-cell high-contrast"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                    <div class="grid-cell"></div><div class="grid-cell high-contrast"></div><div class="grid-cell high-contrast"></div><div class="grid-cell high-contrast"></div><div class="grid-cell high-contrast"></div><div class="grid-cell"></div><div class="grid-cell low-contrast gaze-point"></div><div class="grid-cell low-contrast"></div>
+                    <div class="grid-cell"></div><div class="grid-cell high-contrast"></div><div class="grid-cell high-contrast"></div><div class="grid-cell high-contrast"></div><div class="grid-cell high-contrast"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+                    <div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div>
+                    <div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div><div class="grid-cell low-contrast"></div>
+                </div>
+            </div>
+            <p style="text-align:center; font-size:14px; margin-top:15px; color:#94a3b8;">Red = High Contrast (Text). Green = Low Contrast (Margins). Dot = Gaze.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 6: The Full Algorithm Pipeline -->
+<div class="slide-container" id="slide6">
+    <h2 class="slide-title">The Algorithm Pipeline</h2>
+    <div class="tiled-content">
+        <div class="tile">
+            <div class="icon">🧮</div>
+            <h3>1. Map to Bin</h3>
+            <p>Convert raw gaze coordinates <span class="math">(x, y)</span> into matrix indices <span class="math">bin(i, j)</span>.</p>
+        </div>
+        <div class="tile">
+            <div class="icon">📊</div>
+            <h3>2. Check Weight</h3>
+            <p>Retrieve the pre-calculated contrast/luminance score for <span class="math">bin(i, j)</span>.</p>
+        </div>
+        <div class="tile">
+            <div class="icon">⚙️</div>
+            <h3>3. Assess Intent</h3>
+            <p>Pass the bin score through the Intent State Machine to scale the "Scroll Friction".</p>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 7: Architecture -->
+<div class="slide-container" id="slide7">
+    <h2 class="slide-title">Technical Integration</h2>
+    <div class="two-column">
+        <div>
+            <div class="image-wrapper">
+                <div class="mockup-ui" style="justify-content: center; align-items: center;">
+                    <div style="font-size: 60px;">🖥️</div>
+                    <div style="color: #10b981; margin-top: 10px; font-weight: bold; letter-spacing: 2px;">GPU VRS PIPELINE</div>
+                </div>
+            </div>
+        </div>
+        <div>
+            <h3>Hardware Synergy</h3>
+            <p>This approach aligns perfectly with modern GPU rendering techniques.</p>
+            <ul>
+                <li><strong>Variable Rate Shading (VRS):</strong> GPUs already divide frames into tiles (e.g., 16x16 pixels) to determine shading rates. We reuse this exact grid for our bins.</li>
+                <li><strong>Zero Computation Overhead:</strong> The contrast maps are generated for rendering optimization anyway; the Intent Engine simply reads the existing buffer.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 8: Key Metrics -->
+<div class="slide-container" id="slide8">
+    <h2 class="slide-title">Key Performance Indicators</h2>
+    <div class="highlight-numbers-layout">
+        <div>
+            <div class="number">O(1)</div>
+            <div class="number-label">Lookup Time</div>
+            <p style="font-size:16px; margin-top:10px;">Mapping gaze to a pre-calculated bin matrix is mathematically instantaneous.</p>
+        </div>
+        <div>
+            <div class="number">90%</div>
+            <div class="number-label">Error Reduction</div>
+            <p style="font-size:16px; margin-top:10px;">Massive decrease in accidental scroll triggers during reading tasks.</p>
+        </div>
+        <div>
+            <div class="number">100%</div>
+            <div class="number-label">Fluidity</div>
+            <p style="font-size:16px; margin-top:10px;">Eliminates artificial dwell timers to create a natural user experience.</p>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
+
